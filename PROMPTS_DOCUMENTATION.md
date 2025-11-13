@@ -1046,3 +1046,239 @@ vision_prompt = "A user is providing an image. Provide a high level description 
 ```
 
 ---
+
+## 6. Embedchain Q&A Prompts
+
+### 6.1 DEFAULT_PROMPT
+
+**Файл:** `/embedchain/embedchain/config/llm/base.py`
+
+**Назначение:**
+Базовый промпт для Q&A системы Embedchain. Генерирует ответы на основе предоставленного контекста.
+
+**Ключевые особенности:**
+- Использует Template с переменными $context и $query
+- Не упоминает явно контекст в ответе
+- Избегает фраз типа "According to the context provided"
+
+**Код промпта:**
+
+```python
+DEFAULT_PROMPT = """
+You are a Q&A expert system. Your responses must always be rooted in the context provided for each query. Here are some guidelines to follow:
+
+1. Refrain from explicitly mentioning the context provided in your response.
+2. The context should silently guide your answers without being directly acknowledged.
+3. Do not use phrases such as 'According to the context provided', 'Based on the context, ...' etc.
+
+Context information:
+----------------------
+$context
+----------------------
+
+Query: $query
+Answer:
+"""
+```
+
+---
+
+### 6.2 DEFAULT_PROMPT_WITH_HISTORY
+
+**Файл:** `/embedchain/embedchain/config/llm/base.py`
+
+**Назначение:**
+Расширенная версия DEFAULT_PROMPT с поддержкой истории разговора. Использует и контекст и историю для генерации ответов.
+
+**Ключевые особенности:**
+- Использует Template с переменными $context, $query и $history
+- Использует релевантный контекст из истории разговора
+- Не упоминает явно контекст в ответе
+
+**Код промпта:**
+
+```python
+DEFAULT_PROMPT_WITH_HISTORY = """
+You are a Q&A expert system. Your responses must always be rooted in the context provided for each query. You are also provided with the conversation history with the user. Make sure to use relevant context from conversation history as needed.
+
+Here are some guidelines to follow:
+
+1. Refrain from explicitly mentioning the context provided in your response.
+2. The context should silently guide your answers without being directly acknowledged.
+3. Do not use phrases such as 'According to the context provided', 'Based on the context, ...' etc.
+
+Context information:
+----------------------
+$context
+----------------------
+
+Conversation history:
+----------------------
+$history
+----------------------
+
+Query: $query
+Answer:
+"""
+```
+
+---
+
+### 6.3 DEFAULT_PROMPT_WITH_MEM0_MEMORY
+
+**Файл:** `/embedchain/embedchain/config/llm/base.py`
+
+**Назначение:**
+Промпт для Q&A с интеграцией Mem0 памяти. Использует контекст, историю И память/предпочтения пользователя.
+
+**Ключевые особенности:**
+- Использует Template с переменными $context, $query, $history и $memories
+- Интегрирует память/предпочтения в ответы
+- Возвращает запрос как есть, если это не вопрос или нет релевантной информации
+
+**Код промпта:**
+
+```python
+DEFAULT_PROMPT_WITH_MEM0_MEMORY = """
+You are an expert at answering questions based on provided memories. You are also provided with the context and conversation history of the user. Make sure to use relevant context from conversation history and context as needed.
+
+Here are some guidelines to follow:
+1. Refrain from explicitly mentioning the context provided in your response.
+2. Take into consideration the conversation history and context provided.
+3. Do not use phrases such as 'According to the context provided', 'Based on the context, ...' etc.
+
+Striclty return the query exactly as it is if it is not a question or if no relevant information is found.
+
+Context information:
+----------------------
+$context
+----------------------
+
+Conversation history:
+----------------------
+$history
+----------------------
+
+Memories/Preferences:
+----------------------
+$memories
+----------------------
+
+Query: $query
+Answer:
+"""
+```
+
+---
+
+### 6.4 DOCS_SITE_DEFAULT_PROMPT
+
+**Файл:** `/embedchain/embedchain/config/llm/base.py`
+
+**Назначение:**
+Специализированный промпт для поддержки разработчиков. Предоставляет полные code snippets где возможно.
+
+**Ключевые особенности:**
+- Предоставляет полные code snippets
+- Не придумывает код самостоятельно
+- Ориентирован на разработчиков
+
+**Код промпта:**
+
+```python
+DOCS_SITE_DEFAULT_PROMPT = """
+You are an expert AI assistant for developer support product. Your responses must always be rooted in the context provided for each query. Wherever possible, give complete code snippet. Dont make up any code snippet on your own.
+
+Here are some guidelines to follow:
+
+1. Refrain from explicitly mentioning the context provided in your response.
+2. The context should silently guide your answers without being directly acknowledged.
+3. Do not use phrases such as 'According to the context provided', 'Based on the context, ...' etc.
+
+Context information:
+----------------------
+$context
+----------------------
+
+Query: $query
+Answer:
+"""
+```
+
+---
+
+## 7. Function Calling Tools (Graph Operations)
+
+**Файл:** `/mem0/graphs/tools.py`
+
+**Назначение:**
+Набор OpenAI function calling инструментов для операций с графом знаний. Эти инструменты используются LLM для структурированного вывода при работе с графом.
+
+### 7.1 Инструменты для управления памятью
+
+**UPDATE_MEMORY_TOOL_GRAPH / UPDATE_MEMORY_STRUCT_TOOL_GRAPH**
+- Обновление relationship существующей графовой памяти
+- Параметры: source, destination, relationship
+- Source и destination остаются неизменными, обновляется только relationship
+
+**ADD_MEMORY_TOOL_GRAPH / ADD_MEMORY_STRUCT_TOOL_GRAPH**
+- Добавление нового отношения в граф знаний
+- Параметры: source, destination, relationship, source_type, destination_type
+- Может создавать новые узлы при необходимости
+
+**DELETE_MEMORY_TOOL_GRAPH / DELETE_MEMORY_STRUCT_TOOL_GRAPH**
+- Удаление отношения между двумя узлами
+- Параметры: source, relationship, destination
+
+**NOOP_TOOL / NOOP_STRUCT_TOOL**
+- Отсутствие операции (no operation)
+- Используется когда не требуется изменений графа
+- Без параметров
+
+### 7.2 Инструменты для извлечения информации
+
+**EXTRACT_ENTITIES_TOOL / EXTRACT_ENTITIES_STRUCT_TOOL**
+- Извлечение сущностей и их типов из текста
+- Параметры: entities (array of {entity, entity_type})
+
+**RELATIONS_TOOL / RELATIONS_STRUCT_TOOL**
+- Установление отношений между сущностями
+- Параметры: entities (array of {source, relationship, destination})
+
+### Различия между обычными и STRUCT версиями
+
+- **Обычные версии**: Стандартные function calling tools
+- **STRUCT версии**: С флагом `"strict": True` для строгой типизации (OpenAI Structured Outputs)
+
+---
+
+## Заключение
+
+Этот документ содержит все AI промпты, используемые в системе Mem0. Промпты организованы по следующим категориям:
+
+1. **Извлечение фактов из памяти** - 3 промпта
+2. **Управление памятью** - 2 промпта
+3. **Работа с графами знаний** - 4 промпта
+4. **Поиск и ответы** - 3 промпта
+5. **Дополнительные промпты** - 4 промпта (категоризация, оценка, ре-ранжирование, vision)
+6. **Embedchain Q&A** - 4 промпта
+7. **Function Calling Tools** - 12 инструментов (6 пар обычных и structured)
+
+**Всего: ~32 различных промпта и инструмента**
+
+### Кастомизация
+
+Система поддерживает следующие точки кастомизации:
+- `custom_fact_extraction_prompt` - переопределение извлечения фактов
+- `custom_update_memory_prompt` - переопределение логики обновления памяти
+- `custom_prompt` - переопределение извлечения сущностей для графов (CUSTOM_PROMPT placeholder)
+- `scoring_prompt` - кастомный промпт для ре-ранжирования
+
+### Используемые форматы вывода
+
+- **JSON** - факты, категории, оценки
+- **JSON с операциями** - управление памятью (ADD/UPDATE/DELETE/NONE)
+- **Function Calling** - операции с графом знаний
+- **Plain Text** - ответы на вопросы, описания изображений
+- **Numerical Score** - ре-ранжирование (0.0-1.0)
+
