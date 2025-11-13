@@ -713,3 +713,336 @@ Provide a list of deletion instructions, each specifying the relationship to be 
 ```
 
 ---
+
+## 4. Поиск и ответы (Query & Answer Generation)
+
+### 4.1 MEMORY_ANSWER_PROMPT
+
+**Файл:** `/mem0/configs/prompts.py`
+
+**Назначение:**
+Промпт для ответа на вопросы на основе предоставленных воспоминаний. Используется для генерации точных и кратких ответов с использованием информации из памяти.
+
+**Ключевые особенности:**
+- Извлекает релевантную информацию из памяти
+- Если нет релевантной информации, не говорит об этом, а дает общий ответ
+- Генерирует четкие и краткие ответы
+- Напрямую отвечает на вопрос
+
+**Код промпта:**
+
+```python
+MEMORY_ANSWER_PROMPT = """
+You are an expert at answering questions based on the provided memories. Your task is to provide accurate and concise answers to the questions by leveraging the information given in the memories.
+
+Guidelines:
+- Extract relevant information from the memories based on the question.
+- If no relevant information is found, make sure you don't say no information is found. Instead, accept the question and provide a general response.
+- Ensure that the answers are clear, concise, and directly address the question.
+
+Here are the details of the task:
+"""
+```
+
+---
+
+### 4.2 ANSWER_PROMPT
+
+**Файл:** `/evaluation/prompts.py`
+
+**Назначение:**
+Промпт для извлечения информации из памяти разговоров двух пользователей. Используется в evaluation для ответа на вопросы на основе воспоминаний обоих участников разговора.
+
+**Ключевые особенности:**
+- Работает с памятью двух пользователей (speaker_1 и speaker_2)
+- Обрабатывает временные ссылки и преобразует их в конкретные даты
+- Использует временные метки для определения ответов
+- Приоритизирует самую свежую память при противоречиях
+- Ответ должен быть менее 5-6 слов
+
+**Код промпта:**
+
+```python
+ANSWER_PROMPT = """
+    You are an intelligent memory assistant tasked with retrieving accurate information from conversation memories.
+
+    # CONTEXT:
+    You have access to memories from two speakers in a conversation. These memories contain
+    timestamped information that may be relevant to answering the question.
+
+    # INSTRUCTIONS:
+    1. Carefully analyze all provided memories from both speakers
+    2. Pay special attention to the timestamps to determine the answer
+    3. If the question asks about a specific event or fact, look for direct evidence in the memories
+    4. If the memories contain contradictory information, prioritize the most recent memory
+    5. If there is a question about time references (like "last year", "two months ago", etc.),
+       calculate the actual date based on the memory timestamp. For example, if a memory from
+       4 May 2022 mentions "went to India last year," then the trip occurred in 2021.
+    6. Always convert relative time references to specific dates, months, or years. For example,
+       convert "last year" to "2022" or "two months ago" to "March 2023" based on the memory
+       timestamp. Ignore the reference while answering the question.
+    7. Focus only on the content of the memories from both speakers. Do not confuse character
+       names mentioned in memories with the actual users who created those memories.
+    8. The answer should be less than 5-6 words.
+
+    # APPROACH (Think step by step):
+    1. First, examine all memories that contain information related to the question
+    2. Examine the timestamps and content of these memories carefully
+    3. Look for explicit mentions of dates, times, locations, or events that answer the question
+    4. If the answer requires calculation (e.g., converting relative time references), show your work
+    5. Formulate a precise, concise answer based solely on the evidence in the memories
+    6. Double-check that your answer directly addresses the question asked
+    7. Ensure your final answer is specific and avoids vague time references
+
+    Memories for user {{speaker_1_user_id}}:
+
+    {{speaker_1_memories}}
+
+    Memories for user {{speaker_2_user_id}}:
+
+    {{speaker_2_memories}}
+
+    Question: {{question}}
+
+    Answer:
+    """
+```
+
+---
+
+### 4.3 ANSWER_PROMPT_GRAPH
+
+**Файл:** `/evaluation/prompts.py`
+
+**Назначение:**
+Расширенная версия ANSWER_PROMPT с поддержкой графа знаний. Использует не только воспоминания, но и отношения из knowledge graph для более полного понимания контекста.
+
+**Ключевые особенности:**
+- Работает с памятью двух пользователей И их knowledge graph relations
+- Анализирует connections между сущностями через граф
+- Все те же возможности, что и ANSWER_PROMPT
+- Использует граф для понимания сети знаний пользователя
+
+**Код промпта:**
+
+```python
+ANSWER_PROMPT_GRAPH = """
+    You are an intelligent memory assistant tasked with retrieving accurate information from
+    conversation memories.
+
+    # CONTEXT:
+    You have access to memories from two speakers in a conversation. These memories contain
+    timestamped information that may be relevant to answering the question. You also have
+    access to knowledge graph relations for each user, showing connections between entities,
+    concepts, and events relevant to that user.
+
+    # INSTRUCTIONS:
+    1. Carefully analyze all provided memories from both speakers
+    2. Pay special attention to the timestamps to determine the answer
+    3. If the question asks about a specific event or fact, look for direct evidence in the
+       memories
+    4. If the memories contain contradictory information, prioritize the most recent memory
+    5. If there is a question about time references (like "last year", "two months ago",
+       etc.), calculate the actual date based on the memory timestamp. For example, if a
+       memory from 4 May 2022 mentions "went to India last year," then the trip occurred
+       in 2021.
+    6. Always convert relative time references to specific dates, months, or years. For
+       example, convert "last year" to "2022" or "two months ago" to "March 2023" based
+       on the memory timestamp. Ignore the reference while answering the question.
+    7. Focus only on the content of the memories from both speakers. Do not confuse
+       character names mentioned in memories with the actual users who created those
+       memories.
+    8. The answer should be less than 5-6 words.
+    9. Use the knowledge graph relations to understand the user's knowledge network and
+       identify important relationships between entities in the user's world.
+
+    # APPROACH (Think step by step):
+    1. First, examine all memories that contain information related to the question
+    2. Examine the timestamps and content of these memories carefully
+    3. Look for explicit mentions of dates, times, locations, or events that answer the
+       question
+    4. If the answer requires calculation (e.g., converting relative time references),
+       show your work
+    5. Analyze the knowledge graph relations to understand the user's knowledge context
+    6. Formulate a precise, concise answer based solely on the evidence in the memories
+    7. Double-check that your answer directly addresses the question asked
+    8. Ensure your final answer is specific and avoids vague time references
+
+    Memories for user {{speaker_1_user_id}}:
+
+    {{speaker_1_memories}}
+
+    Relations for user {{speaker_1_user_id}}:
+
+    {{speaker_1_graph_memories}}
+
+    Memories for user {{speaker_2_user_id}}:
+
+    {{speaker_2_memories}}
+
+    Relations for user {{speaker_2_user_id}}:
+
+    {{speaker_2_graph_memories}}
+
+    Question: {{question}}
+
+    Answer:
+    """
+```
+
+---
+
+## 5. Дополнительные промпты (Additional Prompts)
+
+### 5.1 MEMORY_CATEGORIZATION_PROMPT (Категоризация)
+
+**Файл:** `/openmemory/api/app/utils/prompts.py`
+
+**Назначение:**
+Промпт для категоризации воспоминаний. Назначает память одной или нескольким категориям для организации и фильтрации.
+
+**Категории:**
+- Personal, Relationships, Preferences, Health, Travel, Work, Education, Projects
+- AI/ML & Technology, Technical Support, Finance, Shopping, Legal
+- Entertainment, Messages, Customer Support, Product Feedback, News
+- Organization, Goals
+
+**Ключевые особенности:**
+- Может назначить несколько категорий одному воспоминанию
+- Может создавать новые категории при необходимости
+- Возвращает JSON с ключом 'categories'
+
+**Код промпта:**
+
+```python
+MEMORY_CATEGORIZATION_PROMPT = """Your task is to assign each piece of information (or "memory") to one or more of the following categories. Feel free to use multiple categories per item when appropriate.
+
+- Personal: family, friends, home, hobbies, lifestyle
+- Relationships: social network, significant others, colleagues
+- Preferences: likes, dislikes, habits, favorite media
+- Health: physical fitness, mental health, diet, sleep
+- Travel: trips, commutes, favorite places, itineraries
+- Work: job roles, companies, projects, promotions
+- Education: courses, degrees, certifications, skills development
+- Projects: to‑dos, milestones, deadlines, status updates
+- AI, ML & Technology: infrastructure, algorithms, tools, research
+- Technical Support: bug reports, error logs, fixes
+- Finance: income, expenses, investments, billing
+- Shopping: purchases, wishlists, returns, deliveries
+- Legal: contracts, policies, regulations, privacy
+- Entertainment: movies, music, games, books, events
+- Messages: emails, SMS, alerts, reminders
+- Customer Support: tickets, inquiries, resolutions
+- Product Feedback: ratings, bug reports, feature requests
+- News: articles, headlines, trending topics
+- Organization: meetings, appointments, calendars
+- Goals: ambitions, KPIs, long‑term objectives
+
+Guidelines:
+- Return only the categories under 'categories' key in the JSON format.
+- If you cannot categorize the memory, return an empty list with key 'categories'.
+- Don't limit yourself to the categories listed above only. Feel free to create new categories based on the memory. Make sure that it is a single phrase.
+"""
+```
+
+---
+
+### 5.2 ACCURACY_PROMPT (Оценка)
+
+**Файл:** `/evaluation/metrics/llm_judge.py`
+
+**Назначение:**
+Промпт для оценки корректности сгенерированных ответов. Используется как LLM судья для определения, правилен ли ответ (CORRECT/WRONG).
+
+**Ключевые особенности:**
+- Сравнивает сгенерированный ответ с золотым стандартом
+- Терпимо оценивает - учитывает содержание, а не формат
+- Обрабатывает временные ссылки
+- Возвращает JSON с ключом "label": "CORRECT" или "WRONG"
+
+**Код промпта:**
+
+```python
+ACCURACY_PROMPT = """
+Your task is to label an answer to a question as 'CORRECT' or 'WRONG'. You will be given the following data:
+    (1) a question (posed by one user to another user),
+    (2) a 'gold' (ground truth) answer,
+    (3) a generated answer
+which you will score as CORRECT/WRONG.
+
+The point of the question is to ask about something one user should know about the other user based on their prior conversations.
+The gold answer will usually be a concise and short answer that includes the referenced topic, for example:
+Question: Do you remember what I got the last time I went to Hawaii?
+Gold answer: A shell necklace
+The generated answer might be much longer, but you should be generous with your grading - as long as it touches on the same topic as the gold answer, it should be counted as CORRECT.
+
+For time related questions, the gold answer will be a specific date, month, year, etc. The generated answer might be much longer or use relative time references (like "last Tuesday" or "next month"), but you should be generous with your grading - as long as it refers to the same date or time period as the gold answer, it should be counted as CORRECT. Even if the format differs (e.g., "May 7th" vs "7 May"), consider it CORRECT if it's the same date.
+
+Now it's time for the real question:
+Question: {question}
+Gold answer: {gold_answer}
+Generated answer: {generated_answer}
+
+First, provide a short (one sentence) explanation of your reasoning, then finish with CORRECT or WRONG.
+Do NOT include both CORRECT and WRONG in your response, or it will break the evaluation script.
+
+Just return the label CORRECT or WRONG in a json format with the key as "label".
+"""
+```
+
+---
+
+### 5.3 LLM Reranker Default Prompt (Ре-ранжирование)
+
+**Файл:** `/mem0/reranker/llm_reranker.py`
+
+**Назначение:**
+Промпт для оценки релевантности документов к запросу. Используется для ре-ранжирования результатов поиска на основе их релевантности.
+
+**Ключевые особенности:**
+- Оценивает релевантность по шкале 0.0-1.0
+- Предоставляет четкие критерии для каждого диапазона оценок
+- Возвращает только числовую оценку без объяснений
+- Может быть кастомизирован через scoring_prompt параметр
+
+**Код промпта:**
+
+```python
+def _get_default_prompt(self) -> str:
+    """Get the default scoring prompt template."""
+    return """You are a relevance scoring assistant. Given a query and a document, you need to score how relevant the document is to the query.
+
+Score the relevance on a scale from 0.0 to 1.0, where:
+- 1.0 = Perfectly relevant and directly answers the query
+- 0.8-0.9 = Highly relevant with good information
+- 0.6-0.7 = Moderately relevant with some useful information
+- 0.4-0.5 = Slightly relevant with limited useful information
+- 0.0-0.3 = Not relevant or no useful information
+
+Query: "{query}"
+Document: "{document}"
+
+Provide only a single numerical score between 0.0 and 1.0. Do not include any explanation or additional text."""
+```
+
+---
+
+### 5.4 Image Description Prompt (Обработка изображений)
+
+**Файл:** `/mem0/memory/utils.py`
+
+**Назначение:**
+Inline промпт для получения описания изображений. Используется когда пользователь предоставляет изображение в качестве части сообщения.
+
+**Ключевые особенности:**
+- Генерирует высокоуровневое описание изображения
+- Не включает дополнительный текст
+- Используется с vision-capable LLM моделями
+
+**Код промпта:**
+
+```python
+vision_prompt = "A user is providing an image. Provide a high level description of the image and do not include any additional text."
+```
+
+---
