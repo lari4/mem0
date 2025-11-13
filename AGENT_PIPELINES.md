@@ -337,3 +337,383 @@ OUTPUT: {
 
 ---
 
+## 3. Пайплайн запросов к памяти (Memory Query Pipeline)
+
+**Назначение:** Ответ на вопросы пользователя на основе сохраненных воспоминаний.
+
+**Используемые промпты:**
+1. MEMORY_ANSWER_PROMPT (или ANSWER_PROMPT/ANSWER_PROMPT_GRAPH для evaluation)
+
+**Входные данные:** Вопрос пользователя
+
+**Выходные данные:** Ответ на основе воспоминаний
+
+### Схема пайплайна
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    MEMORY QUERY PIPELINE                        │
+└─────────────────────────────────────────────────────────────────┘
+
+INPUT: query = "What is my favorite food?"
+       filters = {"user_id": "alice_123"}
+
+        │
+        ▼
+┌──────────────────────────────────────────┐
+│  ШАГ 1: Генерация embedding для запроса  │
+│  Embedder: OpenAI/Azure/Ollama/etc.      │
+└──────────────────────────────────────────┘
+        │
+        │ query_embedding = [0.123, 0.456, ...]
+        ▼
+┌───────────────────────────────────────────────────────────┐
+│  ШАГ 2: Поиск релевантных воспоминаний                    │
+│  Database: Vector Store Search (cosine similarity)        │
+│  Optional: With filters (user_id, agent_id, etc.)         │
+└───────────────────────────────────────────────────────────┘
+        │
+        │ retrieved_memories = [
+        │   {"memory": "Loves pizza", "score": 0.89, "id": "mem_1"},
+        │   {"memory": "Likes pasta", "score": 0.75, "id": "mem_2"},
+        │   {"memory": "Name is Alice", "score": 0.42, "id": "mem_3"}
+        │ ]
+        ▼
+┌──────────────────────────────────────────────────────┐
+│  ШАГ 3 (Опционально): Ре-ранжирование                │
+│  Reranker: LLM Reranker (если настроен)              │
+│  Prompt: LLM Reranker Default Prompt                 │
+│                                                      │
+│  Для каждого документа:                              │
+│    LLM оценивает релевантность (0.0-1.0)            │
+│    Сортировка по новой оценке                        │
+└──────────────────────────────────────────────────────┘
+        │
+        │ reranked_memories = [
+        │   {"memory": "Loves pizza", "rerank_score": 0.95},
+        │   {"memory": "Likes pasta", "rerank_score": 0.82}
+        │ ] (top_k filtered)
+        ▼
+┌───────────────────────────────────────────────────────────────────┐
+│  ШАГ 4: Генерация ответа на основе воспоминаний                  │
+│  Prompt: MEMORY_ANSWER_PROMPT                                     │
+│                                                                   │
+│  LLM Input:                                                       │
+│    - System: MEMORY_ANSWER_PROMPT                                 │
+│    - User: Memories context + Question                           │
+│                                                                   │
+│  Formatted as:                                                    │
+│    "Here are the memories:                                        │
+│     1. Loves pizza                                                │
+│     2. Likes pasta                                                │
+│                                                                   │
+│     Question: What is my favorite food?                           │
+│     Answer:"                                                      │
+│                                                                   │
+│  LLM Output: "Your favorite food is pizza."                       │
+└───────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+OUTPUT: "Your favorite food is pizza."
+```
+
+### Вариации Query Pipeline
+
+**A. С графом знаний (Graph-Enhanced Query):**
+```
+ШАГ 2.5: Получение graph relations для найденных сущностей
+         │
+         ▼ graph_memories = ["alice_123 -- loves -- pizza"]
+         │
+ШАГ 4: ANSWER_PROMPT_GRAPH (включает graph relations)
+```
+
+**B. Простой поиск (без генерации ответа):**
+```
+ШАГ 1 → ШАГ 2 (→ ШАГ 3) → OUTPUT: список воспоминаний
+```
+
+---
+
+## 4. Vision Pipeline (Обработка изображений)
+
+**Назначение:** Обработка изображений в сообщениях и извлечение фактов из визуального контента.
+
+**Используемые промпты:**
+1. Image Description Prompt (inline)
+2. USER_MEMORY_EXTRACTION_PROMPT
+
+### Схема пайплайна
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                      VISION PIPELINE                         │
+└──────────────────────────────────────────────────────────────┘
+
+INPUT: messages = [
+  {
+    "role": "user",
+    "content": [
+      {"type": "text", "text": "Look at this!"},
+      {"type": "image_url", "image_url": {"url": "https://..."}}
+    ]
+  }
+]
+
+        │
+        ▼
+┌───────────────────────────────────────────────────────────────┐
+│  ШАГ 1: Обнаружение изображений в сообщениях                  │
+│  Function: parse_vision_messages()                            │
+└───────────────────────────────────────────────────────────────┘
+        │
+        │ Found image in message
+        ▼
+┌───────────────────────────────────────────────────────────────┐
+│  ШАГ 2: Генерация описания изображения                        │
+│  Prompt: Image Description Prompt                             │
+│  Model: Vision-capable LLM (GPT-4V, Claude 3, etc.)          │
+│                                                               │
+│  LLM Input:                                                   │
+│    [                                                          │
+│      {                                                        │
+│        "role": "user",                                        │
+│        "content": [                                           │
+│          {"type": "text", "text": "A user is providing...    │
+│           description..."},                                   │
+│          {"type": "image_url", "image_url": {...}}           │
+│        ]                                                      │
+│      }                                                        │
+│    ]                                                          │
+│                                                               │
+│  LLM Output: "A photo of a pizza on a wooden table"          │
+└───────────────────────────────────────────────────────────────┘
+        │
+        │ image_description = "A photo of a pizza on a wooden table"
+        ▼
+┌──────────────────────────────────────────────────┐
+│  ШАГ 3: Замена изображения на текстовое описание │
+│  Updated message: {"role": "user",               │
+│                    "content": "Look at this! A    │
+│                    photo of a pizza..."}         │
+└──────────────────────────────────────────────────┘
+        │
+        │ text_only_messages
+        ▼
+┌──────────────────────────────────────────────────┐
+│  ШАГ 4-N: Стандартный Memory Pipeline            │
+│  → parse_messages()                              │
+│  → USER_MEMORY_EXTRACTION_PROMPT                 │
+│  → DEFAULT_UPDATE_MEMORY_PROMPT                  │
+│  → Save to database                              │
+└──────────────────────────────────────────────────┘
+        │
+        ▼
+OUTPUT: Memories including image-derived facts
+```
+
+---
+
+## 5. Categorization Pipeline (Категоризация памяти)
+
+**Назначение:** Назначение категорий воспоминаниям для организации.
+
+**Используемые промпты:**
+1. MEMORY_CATEGORIZATION_PROMPT
+
+### Схема пайплайна
+
+```
+┌──────────────────────────────────────────────────────┐
+│              CATEGORIZATION PIPELINE                 │
+└──────────────────────────────────────────────────────┘
+
+INPUT: memory_text = "Loves to play tennis on weekends"
+
+        │
+        ▼
+┌───────────────────────────────────────────────────────────┐
+│  ШАГ 1: Категоризация памяти                              │
+│  Prompt: MEMORY_CATEGORIZATION_PROMPT                     │
+│                                                           │
+│  LLM Input:                                               │
+│    - System: MEMORY_CATEGORIZATION_PROMPT                 │
+│    - User: "Memory: {memory_text}"                        │
+│                                                           │
+│  LLM Output: JSON                                         │
+│    {"categories": ["Preferences", "Health", "Goals"]}    │
+└───────────────────────────────────────────────────────────┘
+        │
+        │ categories = ["Preferences", "Health", "Goals"]
+        ▼
+┌──────────────────────────────────────┐
+│  ШАГ 2: Сохранение с категориями     │
+│  Database: Add metadata              │
+│  metadata = {                        │
+│    "categories": [...],              │
+│    ...other_metadata                 │
+│  }                                   │
+└──────────────────────────────────────┘
+        │
+        ▼
+OUTPUT: Memory with categories stored
+```
+
+**Использование категорий:**
+- Фильтрация при поиске: `memory.search(filters={"categories": ["Work"]})`
+- Организация в UI/API
+- Аналитика по категориям
+
+---
+
+## 6. Embedchain Q&A Pipeline
+
+**Назначение:** Ответы на вопросы на основе документов с использованием контекста и истории.
+
+**Используемые промпты:**
+1. DEFAULT_PROMPT (базовый)
+2. DEFAULT_PROMPT_WITH_HISTORY (с историей)
+3. DEFAULT_PROMPT_WITH_MEM0_MEMORY (с памятью Mem0)
+
+### Схема пайплайна
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                  EMBEDCHAIN Q&A PIPELINE                     │
+└──────────────────────────────────────────────────────────────┘
+
+INPUT: query = "How do I use the API?"
+       conversation_history = [...]  # Optional
+       memories = [...]  # Optional (Mem0 integration)
+
+        │
+        ▼
+┌─────────────────────────────────────────┐
+│  ШАГ 1: Поиск релевантных документов    │
+│  Database: Vector Store (Embedchain)    │
+│  number_documents: 3 (default)          │
+└─────────────────────────────────────────┘
+        │
+        │ retrieved_docs = [
+        │   "API documentation: ...",
+        │   "Example code: ...",
+        │   "Tutorial: ..."
+        │ ]
+        ▼
+┌───────────────────────────────────────────────────────────────────┐
+│  ШАГ 2: Форматирование промпта                                    │
+│  Template: DEFAULT_PROMPT_WITH_MEM0_MEMORY                        │
+│                                                                   │
+│  Variables filled:                                                │
+│    - $context = retrieved_docs (formatted)                        │
+│    - $query = user question                                       │
+│    - $history = conversation_history (formatted)                  │
+│    - $memories = user memories/preferences                        │
+│                                                                   │
+│  Formatted prompt:                                                │
+│    "Context information:                                          │
+│     ----------------------                                        │
+│     [Document 1 content]                                          │
+│     [Document 2 content]                                          │
+│     ----------------------                                        │
+│     Conversation history:                                         │
+│     ----------------------                                        │
+│     user: Previous question                                       │
+│     assistant: Previous answer                                    │
+│     ----------------------                                        │
+│     Memories/Preferences:                                         │
+│     ----------------------                                        │
+│     - Prefers Python examples                                     │
+│     ----------------------                                        │
+│     Query: How do I use the API?                                  │
+│     Answer:"                                                      │
+└───────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌────────────────────────────────────┐
+│  ШАГ 3: Генерация ответа           │
+│  LLM: OpenAI/Azure/Anthropic/etc.  │
+└────────────────────────────────────┘
+        │
+        ▼
+OUTPUT: "To use the API, you need to first initialize... [detailed answer with code examples]"
+```
+
+---
+
+## 7. Комбинированные пайплайны
+
+### 7.1 Полный пайплайн с памятью и графом
+
+```
+User Message
+    │
+    ├─→ Vision Pipeline (если есть изображение)
+    │   └─→ Image Description
+    │
+    ├─→ Basic Memory Pipeline
+    │   └─→ Extract Facts → Update Memory
+    │
+    └─→ Graph Memory Pipeline (если включен)
+        └─→ Extract Entities → Relations → Update Graph
+
+
+Query from User
+    │
+    ├─→ Vector Search (memories)
+    │
+    ├─→ Graph Search (relations) [если включен]
+    │
+    ├─→ Reranking [опционально]
+    │
+    └─→ Answer Generation (with memories + graph context)
+```
+
+### 7.2 Evaluation Pipeline (Benchmarking)
+
+```
+Dataset with Q&A pairs
+    │
+    ├─→ For each question:
+    │   │
+    │   ├─→ Memory Query Pipeline
+    │   │   └─→ generated_answer
+    │   │
+    │   └─→ LLM Judge (ACCURACY_PROMPT)
+    │       └─→ CORRECT/WRONG label
+    │
+    └─→ Calculate metrics (accuracy per category)
+```
+
+---
+
+## Заключение
+
+Этот документ описывает все основные пайплайны работы агента Mem0:
+
+1. **Basic Memory Pipeline** - Создание и обновление памяти из разговоров
+2. **Graph Memory Pipeline** - Построение графа знаний с сущностями и отношениями
+3. **Memory Query Pipeline** - Ответы на вопросы на основе воспоминаний
+4. **Vision Pipeline** - Обработка изображений и извлечение фактов
+5. **Categorization Pipeline** - Организация памяти по категориям
+6. **Embedchain Q&A Pipeline** - RAG система с контекстом и историей
+7. **Combined Pipelines** - Интеграция различных пайплайнов
+
+### Ключевые принципы
+
+1. **Модульность**: Каждый пайплайн независим и может использоваться отдельно
+2. **Композиция**: Пайплайны комбинируются для сложных сценариев
+3. **Кастомизация**: Промпты могут быть переопределены через конфигурацию
+4. **Масштабируемость**: Поддержка различных провайдеров (LLM, Vector DB, Graph DB)
+
+### Потоки данных
+
+```
+Сообщение → [Vision?] → Текст → Извлечение фактов → Память
+                                                    ↓
+                              Граф ← Отношения ← Сущности
+
+Запрос → Vector Search → [Rerank?] → [Graph Search?] → Ответ
+```
+
+
